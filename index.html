@@ -454,20 +454,6 @@ canvasWrap.addEventListener('touchstart', e => {
     return;
   }
   if (e.touches.length !== 1) return;
-  if (state.locked) {
-    if (state.beadingMode) return;
-    e.preventDefault();
-    const rect = mainCanvas.getBoundingClientRect();
-    const tx = e.touches[0].clientX - rect.left;
-    const ty = e.touches[0].clientY - rect.top;
-    const imgPos = screenToImage(tx, ty);
-    if (state.editMode) {
-      handleEditClick(imgPos.x, imgPos.y);
-    } else {
-      handleCellClick(imgPos.x, imgPos.y);
-    }
-    return;
-  }
   e.preventDefault();
   state.dragging = true;
   state.dragStartMouse = { x: e.touches[0].clientX, y: e.touches[0].clientY };
@@ -500,6 +486,22 @@ canvasWrap.addEventListener('touchmove', e => {
 
 canvasWrap.addEventListener('touchend', e => {
   if (e.touches.length === 0) {
+    // 位移 < 3px = 点击
+    if (state.dragging && state.locked && !state.beadingMode) {
+      const dx = state.imgOffX - state.dragStartImgOff.x;
+      const dy = state.imgOffY - state.dragStartImgOff.y;
+      if (Math.abs(dx) < 3 && Math.abs(dy) < 3) {
+        const rect = mainCanvas.getBoundingClientRect();
+        const tx = state.dragStartMouse.x - rect.left;
+        const ty = state.dragStartMouse.y - rect.top;
+        const imgPos = screenToImage(tx, ty);
+        if (state.editMode) {
+          handleEditClick(imgPos.x, imgPos.y);
+        } else {
+          handleCellClick(imgPos.x, imgPos.y);
+        }
+      }
+    }
     state.dragging = false;
     state.pinching = false;
   } else if (e.touches.length === 1 && state.pinching) {
