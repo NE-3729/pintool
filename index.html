@@ -24,6 +24,10 @@ body{font-family:system-ui,-apple-system,sans-serif;background:#1a1a2e;color:#e0
 .canvas-wrap{flex:1;position:relative;overflow:hidden;background:#1a1a1a;cursor:default}
 .canvas-wrap canvas{position:absolute;top:0;left:0}
 .upload-hint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#444;font-size:13px;pointer-events:none}
+.loading-overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);z-index:20;gap:16px}
+.spinner{width:40px;height:40px;border:3px solid #333;border-top-color:#e94560;border-radius:50%;animation:spin 0.8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-text{color:#ccc;font-size:13px}
 .sidebar{width:300px;background:#16213e;border-left:1px solid #0f3460;display:flex;flex-direction:column;overflow:hidden;flex-shrink:0}
 .sidebar-header{padding:10px 14px;border-bottom:1px solid #0f3460;font-size:13px;font-weight:600;display:flex;justify-content:space-between;align-items:center}
 .sidebar-list{flex:1;overflow-y:auto;padding:6px}
@@ -41,12 +45,11 @@ body{font-family:system-ui,-apple-system,sans-serif;background:#1a1a2e;color:#e0
 .statusbar{height:26px;background:#16213e;border-top:1px solid #0f3460;display:flex;align-items:center;padding:0 14px;font-size:11px;color:#888;gap:16px;flex-shrink:0}
 .toast{position:fixed;bottom:40px;left:50%;transform:translateX(-50%);background:#e94560;color:#fff;padding:8px 20px;border-radius:8px;font-size:13px;z-index:200;animation:fadeIn 0.2s;pointer-events:none}
 @keyframes fadeIn{from{opacity:0;transform:translateX(-50%) translateY(10px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
-.fine-tune-panel{position:absolute;top:100%;right:8px;background:#16213e;border:1px solid #0f3460;border-radius:8px;padding:10px 14px;z-index:50;display:flex;flex-direction:column;gap:8px;min-width:200px;box-shadow:0 4px 20px rgba(0,0,0,0.5)}
+.fine-tune-panel{position:absolute;top:100%;left:0;background:#16213e;border:1px solid #0f3460;border-radius:8px;padding:10px 14px;z-index:50;display:flex;flex-direction:column;gap:8px;min-width:180px;box-shadow:0 4px 20px rgba(0,0,0,0.5)}
 .ft-row{display:flex;align-items:center;gap:4px}
 .ft-label{font-size:10px;color:#888;width:48px;flex-shrink:0;text-align:right;margin-right:4px}
 .ft-row button{padding:4px 9px;font-size:12px;border:1px solid #0f3460;border-radius:4px;background:#0f3460;color:#e0e0e0;cursor:pointer;min-width:28px;text-align:center}
 .ft-row button:active{background:#e94560}
-.ft-val{font-size:12px;color:#e0e0e0;min-width:28px;text-align:center;font-weight:600}
 .toolbar{position:relative}
 .color-item .edit-btn{font-size:10px;padding:1px 5px;background:transparent;border:1px solid rgba(255,255,255,0.3);border-radius:3px;color:inherit;cursor:pointer;opacity:0.7}
 .color-item .edit-btn:hover{opacity:1}
@@ -85,36 +88,33 @@ body{font-family:system-ui,-apple-system,sans-serif;background:#1a1a2e;color:#e0
   <button id="btnBeading" onclick="toggleBeadingMode()" disabled>开始拼豆</button>
   <span class="sep"></span>
   <button id="btnFit" onclick="resetImage()">适应</button>
-  <button id="btnFineTune" onclick="toggleFineTune()">微调</button>
-</div>
-
-<div class="fine-tune-panel" id="fineTunePanel" style="display:none">
-  <div class="ft-row">
-    <span class="ft-label">图片位置</span>
-    <button onclick="nudgeImage(0,-1)" title="上移1px">↑</button>
-    <button onclick="nudgeImage(-1,0)" title="左移1px">←</button>
-    <button onclick="nudgeImage(1,0)" title="右移1px">→</button>
-    <button onclick="nudgeImage(0,1)" title="下移1px">↓</button>
-  </div>
-  <div class="ft-row">
-    <span class="ft-label">网格偏移</span>
-    <button onclick="nudgeGrid(0,-1)" title="上移1px">↑</button>
-    <button onclick="nudgeGrid(-1,0)" title="左移1px">←</button>
-    <button onclick="nudgeGrid(1,0)" title="右移1px">→</button>
-    <button onclick="nudgeGrid(0,1)" title="下移1px">↓</button>
-  </div>
-  <div class="ft-row">
-    <span class="ft-label">格子大小</span>
-    <button onclick="nudgeCellSize(-1)" title="减小1px">-</button>
-    <span class="ft-val" id="ftCellSize">45</span>
-    <button onclick="nudgeCellSize(1)" title="增大1px">+</button>
-  </div>
+  <span style="position:relative;display:inline-block">
+    <button id="btnFineTune" onclick="toggleFineTune()">微调</button>
+    <div class="fine-tune-panel" id="fineTunePanel" style="display:none">
+      <div class="ft-row">
+        <span class="ft-label">位置</span>
+        <button onclick="nudgeImage(0,-1)">↑</button>
+        <button onclick="nudgeImage(-1,0)">←</button>
+        <button onclick="nudgeImage(1,0)">→</button>
+        <button onclick="nudgeImage(0,1)">↓</button>
+      </div>
+      <div class="ft-row">
+        <span class="ft-label">缩放</span>
+        <button onclick="nudgeScale(-0.01)">-</button>
+        <button onclick="nudgeScale(0.01)">+</button>
+      </div>
+    </div>
+  </span>
 </div>
 
 <div class="main">
   <div class="canvas-wrap" id="canvasWrap">
     <canvas id="mainCanvas"></canvas>
     <div class="upload-hint" id="uploadHint">点击左上角「上传图纸」加载图片</div>
+    <div class="loading-overlay" id="loadingOverlay" style="display:none">
+      <div class="spinner"></div>
+      <div class="loading-text" id="loadingText">处理中...</div>
+    </div>
   </div>
   <div class="sidebar">
     <div class="sidebar-header">颜色映射 <span style="color:#888;font-weight:400;font-size:11px" id="mapCount"></span></div>
@@ -528,7 +528,6 @@ window.addEventListener('resize', () => {
 function toggleFineTune() {
   const panel = document.getElementById('fineTunePanel');
   panel.style.display = panel.style.display === 'none' ? '' : 'none';
-  document.getElementById('ftCellSize').textContent = state.cellSize;
 }
 
 function nudgeImage(dx, dy) {
@@ -539,15 +538,21 @@ function nudgeImage(dx, dy) {
   render();
 }
 
-function nudgeGrid(dx, dy) {
-  state.gridOffX += dx;
-  state.gridOffY += dy;
+function nudgeScale(delta) {
+  if (!state.image || state.locked) return;
+  const cx = canvasWrap.clientWidth / 2;
+  const cy = canvasWrap.clientHeight / 2;
+  const oldS = state.imgScale;
+  state.imgScale = Math.max(0.05, Math.min(30, state.imgScale + delta));
+  state.imgOffX = cx - (cx - state.imgOffX) * (state.imgScale / oldS);
+  state.imgOffY = cy - (cy - state.imgOffY) * (state.imgScale / oldS);
+  updatePosStatus();
   render();
 }
 
-function nudgeCellSize(delta) {
-  state.cellSize = Math.max(5, Math.min(200, state.cellSize + delta));
-  document.getElementById('ftCellSize').textContent = state.cellSize;
+function nudgeGrid(dx, dy) {
+  state.gridOffX += dx;
+  state.gridOffY += dy;
   render();
 }
 
@@ -584,12 +589,14 @@ async function lockGrid() {
     return;
   }
 
-  // 立即锁定图片，防止处理期间误触移动
+  // 立即锁定图片
   state.locked = true;
-  document.getElementById('btnLock').textContent = '采样颜色...';
+  document.getElementById('btnLock').textContent = '处理中...';
   document.getElementById('btnLock').disabled = true;
-  document.getElementById('statusCells').textContent = '锁定图片，采样中...';
+  showLoading('采样颜色...');
   render();
+
+  try {
 
   // 每个格子在图像上的大小
   const imgCellSize = cs / s;
@@ -603,8 +610,6 @@ async function lockGrid() {
 
   state.cells = new Map();
   const colorClusters = [];
-
-  document.getElementById('statusCells').textContent = `采样 ${total} 格...`;
 
   // 从全图数据中采样每个格子
   for (let r = 0; r < totalRows; r++) {
@@ -639,21 +644,30 @@ async function lockGrid() {
       }
     }
 
-    // 每10行更新一次进度
     if (r % 10 === 0) {
-      document.getElementById('statusCells').textContent = `采样 ${r + 1}/${totalRows} 行`;
+      showLoading(`采样 ${r + 1}/${totalRows} 行`);
       await sleep(0);
     }
   }
 
   const actualTotal = state.cells.size;
-  document.getElementById('statusCells').textContent = `${actualTotal}格, ${colorClusters.length}色, 加载OCR引擎...`;
+  showLoading(`${actualTotal}格, ${colorClusters.length}色, 加载OCR引擎...`);
   await sleep(0);
 
-  // 复用单个worker，避免移动端反复加载的巨大开销
-  const worker = await Tesseract.createWorker('eng');
+  // 复用单个worker，带进度回调
+  const worker = await Tesseract.createWorker('eng', 1, {
+    logger: m => {
+      if (m.status === 'loading tesseract core') {
+        showLoading(`加载OCR核心... ${m.progress ? Math.round(m.progress * 100) + '%' : ''}`);
+      } else if (m.status === 'initializing tesseract') {
+        showLoading('初始化OCR引擎...');
+      } else if (m.status === 'loading language traineddata') {
+        showLoading(`加载语言包... ${m.progress ? Math.round(m.progress * 100) + '%' : ''}`);
+      }
+    }
+  });
   await worker.setParameters({ tessedit_pageseg_mode: 7 });
-  document.getElementById('statusCells').textContent = `${actualTotal}格, ${colorClusters.length}色, OCR中...`;
+  showLoading(`${actualTotal}格, ${colorClusters.length}色, OCR识别中...`);
 
   let ocrDone = 0;
   for (const cluster of colorClusters) {
@@ -668,8 +682,7 @@ async function lockGrid() {
 
     ocrDone++;
     if (ocrDone % 5 === 0 || ocrDone === colorClusters.length) {
-      document.getElementById('statusCells').textContent =
-        `OCR ${ocrDone}/${colorClusters.length} 色`;
+      showLoading(`OCR ${ocrDone}/${colorClusters.length} 色`);
       await sleep(1);
     }
   }
@@ -695,9 +708,27 @@ async function lockGrid() {
   document.getElementById('statusCells').textContent =
     `${actualTotal} 格 ${colorClusters.length} 色 | 点击格子查看详情`;
 
+  hideLoading();
   renderColorMap();
   render();
   toast(`切分完成！${actualTotal}格，${colorClusters.length}种颜色`);
+  } catch (err) {
+    hideLoading();
+    state.locked = false;
+    document.getElementById('btnLock').textContent = '切分';
+    document.getElementById('btnLock').disabled = false;
+    toast(`OCR失败: ${err.message || '未知错误'}`);
+  }
+}
+
+function showLoading(msg) {
+  document.getElementById('loadingOverlay').style.display = '';
+  document.getElementById('loadingText').textContent = msg;
+  document.getElementById('statusCells').textContent = msg;
+}
+
+function hideLoading() {
+  document.getElementById('loadingOverlay').style.display = 'none';
 }
 
 function sampleFromData(pixels, imgW, imgH, x, y, size) {
@@ -1100,7 +1131,6 @@ function renderCellInfo(cell) {
     el.innerHTML = '<div style="color:#555;font-size:11px">切分后点击格子查看详情</div>';
     return;
   }
-  const hex = '#' + cell.rgb.map(v => v.toString(16).padStart(2, '0')).join('');
   const rgbStr = `rgb(${cell.rgb[0]},${cell.rgb[1]},${cell.rgb[2]})`;
   const codeValid = isValidCode(cell.code);
   const validCodes = getValidCodes();
@@ -1123,12 +1153,9 @@ function renderCellInfo(cell) {
   }
 
   el.innerHTML = `
-    <div class="label">格子位置</div>
-    <div class="val">第 ${cell.row + 1} 行, 第 ${cell.col + 1} 列</div>
     <div class="label">色号</div>
     <div class="val" style="font-size:15px;font-weight:700;color:${codeValid ? '#e0e0e0' : '#f87171'}">${cell.code || '未识别'}</div>
     <div class="label">颜色 <span class="swatch-preview" style="background:${rgbStr}"></span></div>
-    <div class="val">RGB(${cell.rgb[0]}, ${cell.rgb[1]}, ${cell.rgb[2]}) ${hex}</div>
     <button onclick="reOCRSelected()" style="margin-top:4px;padding:3px 10px;font-size:10px;background:#0f3460;border:1px solid #1a4a7a;border-radius:3px;color:#e0e0e0;cursor:pointer">重新OCR</button>
     ${actionHtml}
   `;
