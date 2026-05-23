@@ -23,6 +23,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:#1a1a2e;color:#e0
 .main{display:flex;flex:1;overflow:hidden}
 .canvas-wrap{flex:1;position:relative;overflow:hidden;background:#1a1a1a;cursor:default}
 .canvas-wrap canvas{position:absolute;top:0;left:0}
+.upload-hint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#444;font-size:13px;pointer-events:none}
 .sidebar{width:300px;background:#16213e;border-left:1px solid #0f3460;display:flex;flex-direction:column;overflow:hidden;flex-shrink:0}
 .sidebar-header{padding:10px 14px;border-bottom:1px solid #0f3460;font-size:13px;font-weight:600;display:flex;justify-content:space-between;align-items:center}
 .sidebar-list{flex:1;overflow-y:auto;padding:6px}
@@ -38,12 +39,15 @@ body{font-family:system-ui,-apple-system,sans-serif;background:#1a1a2e;color:#e0
 .cell-info .val{color:#e0e0e0;margin-bottom:2px}
 .cell-info .swatch-preview{display:inline-block;width:40px;height:20px;border-radius:3px;border:1px solid #333;vertical-align:middle;margin-left:6px}
 .statusbar{height:26px;background:#16213e;border-top:1px solid #0f3460;display:flex;align-items:center;padding:0 14px;font-size:11px;color:#888;gap:16px;flex-shrink:0}
-.drop-zone{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;z-index:10}
-.drop-zone .msg{background:rgba(0,0,0,0.85);padding:24px 40px;border-radius:12px;text-align:center;border:2px dashed #555}
-.drop-zone .msg p{color:#aaa;margin-top:8px;font-size:13px}
-.align-hint{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.85);color:#aaa;padding:6px 16px;border-radius:6px;font-size:11px;pointer-events:none;white-space:nowrap}
 .toast{position:fixed;bottom:40px;left:50%;transform:translateX(-50%);background:#e94560;color:#fff;padding:8px 20px;border-radius:8px;font-size:13px;z-index:200;animation:fadeIn 0.2s;pointer-events:none}
 @keyframes fadeIn{from{opacity:0;transform:translateX(-50%) translateY(10px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+.fine-tune-panel{position:absolute;top:100%;right:8px;background:#16213e;border:1px solid #0f3460;border-radius:8px;padding:10px 14px;z-index:50;display:flex;flex-direction:column;gap:8px;min-width:200px;box-shadow:0 4px 20px rgba(0,0,0,0.5)}
+.ft-row{display:flex;align-items:center;gap:4px}
+.ft-label{font-size:10px;color:#888;width:48px;flex-shrink:0;text-align:right;margin-right:4px}
+.ft-row button{padding:4px 9px;font-size:12px;border:1px solid #0f3460;border-radius:4px;background:#0f3460;color:#e0e0e0;cursor:pointer;min-width:28px;text-align:center}
+.ft-row button:active{background:#e94560}
+.ft-val{font-size:12px;color:#e0e0e0;min-width:28px;text-align:center;font-weight:600}
+.toolbar{position:relative}
 .color-item .edit-btn{font-size:10px;padding:1px 5px;background:transparent;border:1px solid rgba(255,255,255,0.3);border-radius:3px;color:inherit;cursor:pointer;opacity:0.7}
 .color-item .edit-btn:hover{opacity:1}
 .color-item input[type=checkbox]{accent-color:#e94560;pointer-events:none;flex-shrink:0}
@@ -62,10 +66,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:#1a1a2e;color:#e0
   .toolbar{padding:4px 6px;gap:3px}
   .toolbar h1{font-size:13px;margin-right:4px}
   .toolbar button{padding:3px 7px;font-size:10px}
-  .toolbar label{font-size:10px}
-  .toolbar input[type=number]{width:42px;font-size:10px;padding:2px 3px}
   .toolbar .sep{margin:0 1px}
-  .align-hint{font-size:10px;padding:4px 10px;bottom:6px}
 }
 </style>
 </head>
@@ -76,10 +77,6 @@ body{font-family:system-ui,-apple-system,sans-serif;background:#1a1a2e;color:#e0
   <button id="btnUpload" onclick="document.getElementById('fileInput').click()">上传图纸</button>
   <input type="file" id="fileInput" accept="image/png,image/jpeg,image/jpg" hidden onchange="handleUpload(this)">
   <span class="sep"></span>
-  <label>格子大小</label>
-  <input type="number" id="cellSize" value="40" min="5" max="200" onchange="onCellSizeChange()">
-  <label>px</label>
-  <span class="sep"></span>
   <button id="btnLock" class="primary" onclick="lockGrid()" disabled>切分</button>
   <span id="editModeSep" class="sep" style="display:none"></span>
   <span id="editModeLabel" style="display:none;color:#e94560;font-size:12px;font-weight:600"></span>
@@ -87,24 +84,37 @@ body{font-family:system-ui,-apple-system,sans-serif;background:#1a1a2e;color:#e0
   <span class="sep"></span>
   <button id="btnBeading" onclick="toggleBeadingMode()" disabled>开始拼豆</button>
   <span class="sep"></span>
-  <button id="btnZoomIn" onclick="zoomImage(1.15)">+</button>
-  <button id="btnZoomOut" onclick="zoomImage(0.87)">-</button>
   <button id="btnFit" onclick="resetImage()">适应</button>
+  <button id="btnFineTune" onclick="toggleFineTune()">微调</button>
+</div>
+
+<div class="fine-tune-panel" id="fineTunePanel" style="display:none">
+  <div class="ft-row">
+    <span class="ft-label">图片位置</span>
+    <button onclick="nudgeImage(0,-1)" title="上移1px">↑</button>
+    <button onclick="nudgeImage(-1,0)" title="左移1px">←</button>
+    <button onclick="nudgeImage(1,0)" title="右移1px">→</button>
+    <button onclick="nudgeImage(0,1)" title="下移1px">↓</button>
+  </div>
+  <div class="ft-row">
+    <span class="ft-label">网格偏移</span>
+    <button onclick="nudgeGrid(0,-1)" title="上移1px">↑</button>
+    <button onclick="nudgeGrid(-1,0)" title="左移1px">←</button>
+    <button onclick="nudgeGrid(1,0)" title="右移1px">→</button>
+    <button onclick="nudgeGrid(0,1)" title="下移1px">↓</button>
+  </div>
+  <div class="ft-row">
+    <span class="ft-label">格子大小</span>
+    <button onclick="nudgeCellSize(-1)" title="减小1px">-</button>
+    <span class="ft-val" id="ftCellSize">45</span>
+    <button onclick="nudgeCellSize(1)" title="增大1px">+</button>
+  </div>
 </div>
 
 <div class="main">
   <div class="canvas-wrap" id="canvasWrap">
     <canvas id="mainCanvas"></canvas>
-    <div class="drop-zone" id="dropZone">
-      <div class="msg">
-        <p style="font-size:24px">🧩</p>
-        <p style="font-size:15px;color:#e0e0e0;margin-top:8px">拖拽图纸到此处</p>
-        <p>或点击"上传图纸"</p>
-      </div>
-    </div>
-    <div class="align-hint" id="alignHint" style="display:none">
-      拖拽对齐 | 滚轮缩放 | Ctrl+滚轮精细缩放 | 方向键微调(1px) | Shift+方向键移网格 | Ctrl+方向键调格子大小 | +/-粗调 | Enter切分
-    </div>
+    <div class="upload-hint" id="uploadHint">点击左上角「上传图纸」加载图片</div>
   </div>
   <div class="sidebar">
     <div class="sidebar-header">颜色映射 <span style="color:#888;font-weight:400;font-size:11px" id="mapCount"></span></div>
@@ -136,7 +146,7 @@ const state = {
   imgOffY: 0,
 
   // 无限网格（仅两个参数）
-  cellSize: 40,        // 格子边长（屏幕像素）
+  cellSize: 45,        // 格子边长（屏幕像素）
   gridOffX: 0,         // 网格原点屏幕偏移
   gridOffY: 0,
 
@@ -174,8 +184,6 @@ const mainCanvas = document.getElementById('mainCanvas');
 const ctx = mainCanvas.getContext('2d');
 const offCanvas = document.getElementById('offscreenCanvas');
 const offCtx = offCanvas.getContext('2d');
-const dropZone = document.getElementById('dropZone');
-const alignHint = document.getElementById('alignHint');
 
 // ===== 图片加载 =====
 document.addEventListener('dragover', e => { e.preventDefault(); });
@@ -198,7 +206,7 @@ function loadImage(file) {
     img.onload = () => {
       state.image = img;
       resetAll();
-      dropZone.style.display = 'none';
+      document.getElementById('uploadHint').style.display = 'none';
       resetImage();
       updateStatus();
     };
@@ -217,11 +225,9 @@ function resetAll() {
   state.colorMap = null;
   state.selectedCell = null;
   state.highlightedCode = null;
-  alignHint.style.display = 'block';
   document.getElementById('btnLock').disabled = false;
   document.getElementById('btnBeading').disabled = true;
   document.getElementById('btnBeading').textContent = '开始拼豆';
-  document.getElementById('cellSize').value = state.cellSize;
   updateEditModeUI();
   renderColorMap();
   renderCellInfo();
@@ -509,28 +515,39 @@ canvasWrap.addEventListener('touchend', e => {
   }
 });
 
-// 窗口大小变化时重绘
+// 窗口大小变化时重绘，转屏自动适应
+let _lastOrient = window.matchMedia('(orientation: portrait)').matches ? 'p' : 'l';
 window.addEventListener('resize', () => {
-  if (state.image) render();
+  if (!state.image) return;
+  const cur = window.matchMedia('(orientation: portrait)').matches ? 'p' : 'l';
+  if (cur !== _lastOrient) { _lastOrient = cur; resetImage(); }
+  else render();
 });
 
-// ===== 格子大小 =====
-function onCellSizeChange() {
-  state.cellSize = Math.max(5, Math.min(200, parseInt(document.getElementById('cellSize').value) || 40));
-  document.getElementById('cellSize').value = state.cellSize;
+// ===== 微调 =====
+function toggleFineTune() {
+  const panel = document.getElementById('fineTunePanel');
+  panel.style.display = panel.style.display === 'none' ? '' : 'none';
+  document.getElementById('ftCellSize').textContent = state.cellSize;
+}
+
+function nudgeImage(dx, dy) {
+  if (!state.image) return;
+  state.imgOffX += dx;
+  state.imgOffY += dy;
+  updatePosStatus();
   render();
 }
 
-// ===== 缩放图片 =====
-function zoomImage(factor) {
-  if (!state.image || state.locked) return;
-  const cx = canvasWrap.clientWidth / 2;
-  const cy = canvasWrap.clientHeight / 2;
-  const oldS = state.imgScale;
-  state.imgScale = Math.max(0.05, Math.min(30, state.imgScale * factor));
-  state.imgOffX = cx - (cx - state.imgOffX) * (state.imgScale / oldS);
-  state.imgOffY = cy - (cy - state.imgOffY) * (state.imgScale / oldS);
-  updatePosStatus();
+function nudgeGrid(dx, dy) {
+  state.gridOffX += dx;
+  state.gridOffY += dy;
+  render();
+}
+
+function nudgeCellSize(delta) {
+  state.cellSize = Math.max(5, Math.min(200, state.cellSize + delta));
+  document.getElementById('ftCellSize').textContent = state.cellSize;
   render();
 }
 
@@ -569,7 +586,6 @@ async function lockGrid() {
 
   // 立即锁定图片，防止处理期间误触移动
   state.locked = true;
-  alignHint.style.display = 'none';
   document.getElementById('btnLock').textContent = '采样颜色...';
   document.getElementById('btnLock').disabled = true;
   document.getElementById('statusCells').textContent = '锁定图片，采样中...';
@@ -631,14 +647,19 @@ async function lockGrid() {
   }
 
   const actualTotal = state.cells.size;
+  document.getElementById('statusCells').textContent = `${actualTotal}格, ${colorClusters.length}色, 加载OCR引擎...`;
+  await sleep(0);
+
+  // 复用单个worker，避免移动端反复加载的巨大开销
+  const worker = await Tesseract.createWorker('eng');
+  await worker.setParameters({ tessedit_pageseg_mode: 7 });
   document.getElementById('statusCells').textContent = `${actualTotal}格, ${colorClusters.length}色, OCR中...`;
 
-  // 每类OCR一个代表格子
   let ocrDone = 0;
   for (const cluster of colorClusters) {
     const repKey = cluster.cellKeys[0];
     const repCell = state.cells.get(repKey);
-    const code = await ocrCell(offCanvas, repCell.imgX, repCell.imgY, repCell.size);
+    const code = await ocrCell(offCanvas, repCell.imgX, repCell.imgY, repCell.size, worker);
     const finalCode = code || '?';
 
     for (const key of cluster.cellKeys) {
@@ -652,6 +673,7 @@ async function lockGrid() {
       await sleep(1);
     }
   }
+  await worker.terminate();
 
   // 建立颜色映射
   state.colorMap = new Map();
@@ -714,7 +736,7 @@ function sampleCellColor(ctx, x, y, size) {
   return n > 0 ? [Math.round(r / n), Math.round(g / n), Math.round(b / n)] : [128, 128, 128];
 }
 
-async function ocrCell(canvas, x, y, size) {
+async function ocrCell(canvas, x, y, size, worker) {
   try {
     const sc = 4;
     const cellCanvas = document.createElement('canvas');
@@ -734,10 +756,13 @@ async function ocrCell(canvas, x, y, size) {
     }
     cctx.putImageData(imgData, 0, 0);
 
-    const worker = await Tesseract.createWorker('eng');
-    await worker.setParameters({ tessedit_pageseg_mode: 7 });
+    const ownWorker = !worker;
+    if (ownWorker) {
+      worker = await Tesseract.createWorker('eng');
+      await worker.setParameters({ tessedit_pageseg_mode: 7 });
+    }
     const result = await worker.recognize(cellCanvas.toDataURL('image/png'));
-    await worker.terminate();
+    if (ownWorker) await worker.terminate();
 
     const text = result.data.text.trim().replace(/[|{}[\]~`]/g, '');
     const match = text.match(/([A-Za-z]{1,2}\s*\d{1,3})/);
@@ -1155,46 +1180,16 @@ document.addEventListener('keydown', e => {
   if (!state.image) return;
   if (e.target.tagName === 'INPUT') return;
 
-  const shift = e.shiftKey, ctrl = e.ctrlKey;
-
   if (!state.locked) {
-    // 对齐模式
-    if (e.key === 'ArrowLeft') {
-      e.preventDefault();
-      if (ctrl) { state.cellSize = Math.max(5, state.cellSize - 1); document.getElementById('cellSize').value = state.cellSize; }
-      else if (shift) { state.gridOffX -= 1; }
-      else { state.imgOffX -= 1; }
-    }
-    if (e.key === 'ArrowRight') {
-      e.preventDefault();
-      if (ctrl) { state.cellSize += 1; document.getElementById('cellSize').value = state.cellSize; }
-      else if (shift) { state.gridOffX += 1; }
-      else { state.imgOffX += 1; }
-    }
-    if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      if (ctrl) { state.cellSize = Math.max(5, state.cellSize - 1); document.getElementById('cellSize').value = state.cellSize; }
-      else if (shift) { state.gridOffY -= 1; }
-      else { state.imgOffY -= 1; }
-    }
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      if (ctrl) { state.cellSize += 1; document.getElementById('cellSize').value = state.cellSize; }
-      else if (shift) { state.gridOffY += 1; }
-      else { state.imgOffY += 1; }
-    }
+    if (e.key === 'ArrowLeft') { e.preventDefault(); if (e.shiftKey) state.gridOffX -= 1; else state.imgOffX -= 1; }
+    if (e.key === 'ArrowRight') { e.preventDefault(); if (e.shiftKey) state.gridOffX += 1; else state.imgOffX += 1; }
+    if (e.key === 'ArrowUp') { e.preventDefault(); if (e.shiftKey) state.gridOffY -= 1; else state.imgOffY -= 1; }
+    if (e.key === 'ArrowDown') { e.preventDefault(); if (e.shiftKey) state.gridOffY += 1; else state.imgOffY += 1; }
+    if (e.key === '0') { e.preventDefault(); resetImage(); }
     updatePosStatus();
     render();
   }
 
-  // 缩放（仅对齐模式）
-  if (!state.locked) {
-    if (e.key === '+' || e.key === '=') { e.preventDefault(); zoomImage(1.1); }
-    if (e.key === '-' || e.key === '_') { e.preventDefault(); zoomImage(0.9); }
-    if (e.key === '0') { e.preventDefault(); resetImage(); }
-  }
-
-  // 取消选择 / 退出编辑模式
   if (e.key === 'Escape') {
     if (state.beadingMode) {
       state.activeColors = new Set();
