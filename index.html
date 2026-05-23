@@ -167,6 +167,7 @@ const state = {
 
   // 拖拽状态
   dragging: false,
+  hasMoved: false,
   dragStartImgOff: {x:0,y:0},
   dragStartMouse: {x:0,y:0},
 
@@ -381,6 +382,7 @@ function screenToImage(sx, sy) {
 canvasWrap.addEventListener('mousedown', e => {
   if (!state.image) return;
   state.dragging = true;
+  state.hasMoved = false;
   state.dragStartMouse = { x: e.clientX, y: e.clientY };
   state.dragStartImgOff = { x: state.imgOffX, y: state.imgOffY };
   canvasWrap.style.cursor = 'grabbing';
@@ -388,6 +390,7 @@ canvasWrap.addEventListener('mousedown', e => {
 
 window.addEventListener('mousemove', e => {
   if (!state.dragging) return;
+  state.hasMoved = true;
   state.imgOffX = state.dragStartImgOff.x + (e.clientX - state.dragStartMouse.x);
   state.imgOffY = state.dragStartImgOff.y + (e.clientY - state.dragStartMouse.y);
   updatePosStatus();
@@ -398,10 +401,7 @@ window.addEventListener('mouseup', e => {
   if (!state.dragging) return;
   state.dragging = false;
   canvasWrap.style.cursor = '';
-  // 几乎没动 = 点击
-  const dx = e.clientX - state.dragStartMouse.x;
-  const dy = e.clientY - state.dragStartMouse.y;
-  if (Math.abs(dx) < 3 && Math.abs(dy) < 3 && state.locked && !state.beadingMode) {
+  if (!state.hasMoved && state.locked && !state.beadingMode) {
     const rect = mainCanvas.getBoundingClientRect();
     const imgPos = screenToImage(e.clientX - rect.left, e.clientY - rect.top);
     if (state.editMode) {
@@ -456,6 +456,7 @@ canvasWrap.addEventListener('touchstart', e => {
   if (e.touches.length !== 1) return;
   e.preventDefault();
   state.dragging = true;
+  state.hasMoved = false;
   state.dragStartMouse = { x: e.touches[0].clientX, y: e.touches[0].clientY };
   state.dragStartImgOff = { x: state.imgOffX, y: state.imgOffY };
 }, { passive: false });
@@ -477,6 +478,7 @@ canvasWrap.addEventListener('touchmove', e => {
   }
   if (state.dragging && e.touches.length === 1) {
     e.preventDefault();
+    state.hasMoved = true;
     state.imgOffX = state.dragStartImgOff.x + (e.touches[0].clientX - state.dragStartMouse.x);
     state.imgOffY = state.dragStartImgOff.y + (e.touches[0].clientY - state.dragStartMouse.y);
     updatePosStatus();
@@ -486,20 +488,15 @@ canvasWrap.addEventListener('touchmove', e => {
 
 canvasWrap.addEventListener('touchend', e => {
   if (e.touches.length === 0) {
-    // 位移 < 3px = 点击
-    if (state.dragging && state.locked && !state.beadingMode) {
-      const dx = state.imgOffX - state.dragStartImgOff.x;
-      const dy = state.imgOffY - state.dragStartImgOff.y;
-      if (Math.abs(dx) < 3 && Math.abs(dy) < 3) {
-        const rect = mainCanvas.getBoundingClientRect();
-        const tx = state.dragStartMouse.x - rect.left;
-        const ty = state.dragStartMouse.y - rect.top;
-        const imgPos = screenToImage(tx, ty);
-        if (state.editMode) {
-          handleEditClick(imgPos.x, imgPos.y);
-        } else {
-          handleCellClick(imgPos.x, imgPos.y);
-        }
+    if (state.dragging && !state.hasMoved && state.locked && !state.beadingMode) {
+      const rect = mainCanvas.getBoundingClientRect();
+      const tx = state.dragStartMouse.x - rect.left;
+      const ty = state.dragStartMouse.y - rect.top;
+      const imgPos = screenToImage(tx, ty);
+      if (state.editMode) {
+        handleEditClick(imgPos.x, imgPos.y);
+      } else {
+        handleCellClick(imgPos.x, imgPos.y);
       }
     }
     state.dragging = false;
@@ -507,6 +504,7 @@ canvasWrap.addEventListener('touchend', e => {
   } else if (e.touches.length === 1 && state.pinching) {
     state.pinching = false;
     state.dragging = true;
+    state.hasMoved = false;
     state.dragStartMouse = { x: e.touches[0].clientX, y: e.touches[0].clientY };
     state.dragStartImgOff = { x: state.imgOffX, y: state.imgOffY };
   }
@@ -903,9 +901,8 @@ async function reOCRCell(row, col) {
 }
 
 function isValidCode(code) {
-  // 色号必须是字母+数字组合，如 H7、C29、B02
-  if (!code || code === '?' || code.startsWith('UNKNOWN')) return false;
-  return /^[A-Za-z]+\d+$/.test(code) || /^\d+[A-Za-z]+$/.test(code);
+  if (!code || code === '?') return false;
+  return /^[A-Za-z]\d{1,2}$/.test(code);
 }
 
 function getTextColor(rgb) {
@@ -928,7 +925,15 @@ function renderColorMap() {
   for (const [code, entry] of state.colorMap) {
     if (isValidCode(code)) valid.push([code, entry]);
   }
-  valid.sort((a, b) => a[0].localeCompare(b[0]));
+  valid.sort((a, b) => {
+    const am = a[0].match(/^([A-Za-z])(\d{1,2})$/);
+    const bm = b[0].match(/^([A-Za-z])(\d{1,2})$/);
+    if (am && bm) {
+      if (am[1] !== bm[1]) return am[1].localeCompare(bm[1]);
+      return parseInt(am[2]) - parseInt(bm[2]);
+    }
+    return a[0].localeCompare(b[0]);
+  });
 
   document.getElementById('mapCount').textContent = `(${valid.length}色)`;
 
