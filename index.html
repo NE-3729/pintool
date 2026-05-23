@@ -131,7 +131,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:#1a1a2e;color:#e0
 <div class="main">
   <div class="canvas-wrap" id="canvasWrap">
     <canvas id="mainCanvas"></canvas>
-    <div class="upload-hint" id="uploadHint">点击左上角「上传图纸」加载图片</div>
+    <div class="upload-hint" id="uploadHint">豆好拼 — 拼豆图纸辅助工具<br>将带网格的拼豆图纸转为色号清单，支持编辑和纠错，高亮显示所选颜色辅助拼豆<br><br>使用教程<br>1. 上传 — 点击「上传图纸」加载图片，需使用带网格线的标准拼豆图纸<br>2. 对齐 — 拖拽平移 / 双指缩放，或使用「微调」精准对位。将图纸网格与切分网格对齐，对齐越精确，后续使用越顺畅<br>3. 切分 — 对齐完成后点击「切分」，锁定网格并 OCR 识别各格子色号<br>4. 编辑 — 从色号列表中选择色号进入编辑模式，点击格子可加入或移出该色号，也可选择单个格子指定色号<br>5. 拼豆 — 点击「开始拼豆」进入拼豆模式，可随时退出编辑色号<br><br>注意事项<br>- 本工具无需下载且完全免费，点开网址就能用<br>- 仅加载网页和下载 OCR 组件时需要联网，切分完成后可离线使用<br>- OCR 识别准确率和速度受图纸清晰度和网格数量影响，建议使用清晰图纸<br>- OCR 识别可能有误（如将 1 识别为 L，2 识别为 Z），可点击色号旁的 ✎ 手动修正</div>
     <div class="loading-overlay" id="loadingOverlay" style="display:none">
       <div class="spinner"></div>
       <div class="loading-text" id="loadingText">处理中...</div>
