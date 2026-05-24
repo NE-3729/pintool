@@ -934,40 +934,12 @@ async function lockGrid() {
 
   const imgCellSize = cs / s;
 
-  // 绘制图像到离屏 canvas，锐化
+  // 绘制图像到离屏 canvas
   offCanvas.width = imgW;
   offCanvas.height = imgH;
   offCtx.drawImage(state.image, 0, 0);
-  // unsharp mask
   const fullImgData = offCtx.getImageData(0, 0, imgW, imgH);
   const fullPixels = fullImgData.data;
-  const blurred = new Uint8ClampedArray(fullPixels.length);
-  const r = 2;
-  for (let py = 0; py < imgH; py++) {
-    for (let px = 0; px < imgW; px++) {
-      let sr = 0, sg = 0, sb = 0, sn = 0;
-      for (let dy = -r; dy <= r; dy++) {
-        for (let dx = -r; dx <= r; dx++) {
-          const nx = px + dx, ny = py + dy;
-          if (nx < 0 || ny < 0 || nx >= imgW || ny >= imgH) continue;
-          const i = (ny * imgW + nx) * 4;
-          if (fullPixels[i + 3] < 128) continue;
-          sr += fullPixels[i]; sg += fullPixels[i + 1]; sb += fullPixels[i + 2]; sn++;
-        }
-      }
-      const bi = (py * imgW + px) * 4;
-      if (sn > 0) { blurred[bi] = sr / sn; blurred[bi + 1] = sg / sn; blurred[bi + 2] = sb / sn; }
-      else { blurred[bi] = fullPixels[bi]; blurred[bi + 1] = fullPixels[bi + 1]; blurred[bi + 2] = fullPixels[bi + 2]; }
-      blurred[bi + 3] = fullPixels[bi + 3];
-    }
-  }
-  for (let i = 0; i < fullPixels.length; i += 4) {
-    for (let j = 0; j < 3; j++) {
-      const v = fullPixels[i + j] + (fullPixels[i + j] - blurred[i + j]) * 1.5;
-      fullPixels[i + j] = Math.max(0, Math.min(255, Math.round(v)));
-    }
-  }
-  offCtx.putImageData(fullImgData, 0, 0);
 
   // 采样所有格子
   state.cells = new Map();
@@ -998,7 +970,7 @@ async function lockGrid() {
   showLoading(`${actualTotal}格, 加载OCR引擎...`);
   await sleep(0);
 
-  // 逐格 OCR（cellCanvas 取自 offCanvas 的锐化版本）
+  // 逐格 OCR
   const worker = await Tesseract.createWorker('eng', 1, {
     logger: m => {
       if (m.status === 'loading tesseract core') {
@@ -1019,7 +991,7 @@ async function lockGrid() {
   let ocrDone = 0;
   const validCount = { yes: 0, no: 0 };
   for (const [key, cell] of state.cells) {
-    const raw = await ocrCell(offCanvas, cell.imgX, cell.imgY, cell.size, worker);
+    const raw = (await ocrCell(offCanvas, cell.imgX, cell.imgY, cell.size, worker)) || '';
     cell.code = calibrateCode(raw);
     if (cell.code === '?') validCount.no++;
     else validCount.yes++;
@@ -1560,11 +1532,6 @@ function toast(msg) {
   el.textContent = msg;
   document.body.appendChild(el);
   setTimeout(() => el.remove(), 2500);
-}
-
-function rgbDistance(r1, g1, b1, r2, g2, b2) {
-  const dr = r1 - r2, dg = g1 - g2, db = b1 - b2;
-  return Math.sqrt(2 * dr * dr + 4 * dg * dg + 3 * db * db);
 }
 
 updatePosStatus();
