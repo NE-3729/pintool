@@ -904,37 +904,14 @@ const COLOR_LIB = {
   M01:[188,198,184], M02:[138,163,134], M03:[105,125,128], M04:[227,210,188], M05:[208,204,170], M06:[176,167,130], M07:[180,164,151], M08:[179,130,129], M09:[165,135,103], M10:[197,178,188], M11:[159,117,148], M12:[100,71,73], M13:[209,144,102], M14:[199,115,98], M15:[117,125,120],
 };
 
-function rgbDist(a, b) {
-  return Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a[2] - b[2]);
-}
-
-function findClosestColor(rgb) {
-  let best = null, bestDist = Infinity;
-  for (const [code, libRgb] of Object.entries(COLOR_LIB)) {
-    const d = rgbDist(rgb, libRgb);
-    if (d < bestDist) { bestDist = d; best = code; }
-  }
-  return { code: best, dist: bestDist };
-}
-
-function calibrateCode(rawCode, rgb) {
+function calibrateCode(rawCode) {
   // Normalize: uppercase, strip noise, pad single digit (A1→A01)
   const cleaned = rawCode.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
   const m = cleaned.match(/^([A-Z])(\d)$/);
   const code = m ? m[1] + '0' + m[2] : cleaned;
 
-  // OCR read a valid library code → trust it (text on pattern is authoritative)
-  if (COLOR_LIB[code]) return code;
-
-  // OCR got a letter+number but not in library → possible digit misread
-  // Use RGB match only with tight threshold as correction
-  if (/^[A-Z]\d{2}$/.test(code)) {
-    const closest = findClosestColor(rgb);
-    if (closest.dist <= 50) return closest.code;
-  }
-
-  // OCR failed or output is garbage — don't guess, mark unknown
-  return '?';
+  // Only accept codes that exist in the standard library
+  return COLOR_LIB[code] ? code : '?';
 }
 
 async function lockGrid() {
@@ -1057,7 +1034,7 @@ async function lockGrid() {
     const repKey = cluster.cellKeys[0];
     const repCell = state.cells.get(repKey);
     const rawCode = await ocrCell(offCanvas, repCell.imgX, repCell.imgY, repCell.size, worker);
-    const finalCode = calibrateCode(rawCode || '?', repCell.rgb);
+    const finalCode = calibrateCode(rawCode || '?');
 
     for (const key of cluster.cellKeys) {
       state.cells.get(key).code = finalCode;
