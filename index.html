@@ -352,11 +352,15 @@ body{
   <button id="btnUpload" onclick="document.getElementById('fileInput').click()">上传图纸</button>
   <span class="sep"></span>
   <input type="file" id="fileInput" accept="image/png,image/jpeg,image/jpg" hidden onchange="handleUpload(this)">
+  <span class="sep"></span>
+  <label>列</label><input type="number" id="gridCols" value="30" min="1" max="500" onchange="onGridColsChange()">
+  <label>行</label><input type="number" id="gridRows" value="30" min="1" max="500" onchange="onGridRowsChange()">
+  <span class="sep"></span>
   <span style="position:relative;display:inline-block">
     <button id="btnFineTune" onclick="toggleFineTune()">微调</button>
     <div class="fine-tune-panel" id="fineTunePanel" style="display:none">
       <div class="ft-row">
-        <span class="ft-label">位置</span>
+        <span class="ft-label">图片</span>
         <button onclick="nudgeImage(0,-1)">↑</button>
         <button onclick="nudgeImage(0,1)">↓</button>
         <button onclick="nudgeImage(-1,0)">←</button>
@@ -370,7 +374,9 @@ body{
     </div>
   </span>
   <span class="sep"></span>
-  <button id="btnLock" class="primary" onclick="lockGrid()" disabled>切分</button>
+  <button id="btnMarkEmpty" onclick="toggleMarkEmptyMode()" disabled>标空</button>
+  <span class="sep"></span>
+  <button id="btnAction" class="primary" disabled>识别</button>
   <span class="sep"></span>
   <button id="btnFit" onclick="resetImage()">适应</button>
   <span class="sep"></span>
@@ -401,7 +407,7 @@ body{
 <div class="main">
   <div class="canvas-wrap" id="canvasWrap">
     <canvas id="mainCanvas"></canvas>
-    <div class="upload-hint" id="uploadHint"><div class="hint-center">豆好拼 — 拼豆图纸辅助工具<br>将带网格的拼豆图纸转为色号清单，支持编辑和纠错，高亮显示所选颜色辅助拼豆</div><br><div class="hint-center">使用教程</div>1. 上传 — 点击「上传图纸」加载图片，需使用带网格线的标准拼豆图纸<br>2. 对齐 — 拖拽平移 / 双指缩放，或使用「微调」精准对位。将图纸网格与切分网格对齐，对齐越精确，后续使用越顺畅<br>3. 切分 — 对齐完成后点击「切分」，锁定网格并 OCR 识别各格子色号<br>4. 编辑 — 从色号列表中选择色号进入编辑模式，点击格子可加入或移出该色号，也可选择单个格子指定色号<br>5. 拼豆 — 点击「开始拼豆」进入拼豆模式，可随时退出编辑色号<br><br><div class="hint-center">注意事项</div>- 本工具无需下载且完全免费，点开网址就能用<br>- 仅加载网页和下载 OCR 组件时需要联网，切分完成后可离线使用<br>- OCR 识别准确率和速度受图纸清晰度和网格数量影响，建议使用清晰图纸<br>- OCR 识别可能有误（如将 1 识别为 L，2 识别为 Z），可点击色号旁的 ✎ 手动修正</div>
+    <div class="upload-hint" id="uploadHint"><div class="hint-center">豆好拼 — 拼豆图纸辅助工具<br>将拼豆图纸转为色号清单，支持编辑纠错，高亮辅助拼豆</div><br><div class="hint-center">使用教程</div>1. 上传 — 点击「上传图纸」加载拼豆图纸图片<br>2. 设格 — 输入图纸的列数和行数，调整格子大小<br>3. 对齐 — 拖拽图片和网格使红色网格线与图纸线对齐，微调面板可精准对位<br>4. 识别 — 点击「识别」自动检测格子并 OCR 色号，COLOR_LIB 色号库辅助校正<br>5. 编辑 — 选择色号进入编辑模式，点击格子加入/移出，也可单独改格<br>6. 拼豆 — 点击「开始拼豆」进入拼豆模式，高亮选中色号<br><br><div class="hint-center">注意事项</div>- 完全免费，无需下载，浏览器打开即用<br>- 仅加载网页和 OCR 组件时需要联网，识别完成后可离线<br>- OCR 对数字可能误读（如 5→2, 1→L），工具会自动用颜色验证纠正大部分误读<br>- 建议使用清晰的带网格线标准图纸</div>
     <div class="loading-overlay" id="loadingOverlay" style="display:none">
       <div class="spinner"></div>
       <div class="loading-text" id="loadingText">处理中...</div>
@@ -430,7 +436,9 @@ const state = {
   imgOffX: 0,   // 图片左上角屏幕坐标
   imgOffY: 0,
 
-  // 无限网格（仅两个参数）
+  // 网格
+  gridCols: 30,        // 列数
+  gridRows: 30,        // 行数
   cellSize: 45,        // 格子边长（屏幕像素）
   gridOffX: 0,         // 网格原点屏幕偏移
   gridOffY: 0,
@@ -449,6 +457,8 @@ const state = {
   // 拼豆模式
   beadingMode: false,
   activeColors: new Set(),
+  emptyCells: new Set(),  // 用户标为空的格子 "r,c"
+  markEmptyMode: false,  // 标空模式（拖拽滑选标空）
 
   // 拖拽状态
   dragging: false,
@@ -546,6 +556,8 @@ function loadImage(file) {
       }
 
       resetImage();
+      document.getElementById('btnAction').disabled = false;
+      document.getElementById('btnMarkEmpty').disabled = false;
     };
     img.src = e.target.result;
   };
@@ -562,9 +574,19 @@ function resetAll() {
   state.colorMap = null;
   state.selectedCell = null;
   state.highlightedCode = null;
-  document.getElementById('btnLock').disabled = false;
+  state.emptyCells = new Set();
+  state.markEmptyMode = false;
+  const btnMark = document.getElementById('btnMarkEmpty');
+  btnMark.classList.remove('active');
+  btnMark.textContent = '标空';
+  btnMark.disabled = true;
   document.getElementById('btnBeading').disabled = true;
   document.getElementById('btnBeading').textContent = '开始拼豆';
+  syncGridUI();
+  const btn = document.getElementById('btnAction');
+  btn.textContent = '识别';
+  btn.disabled = true;
+  btn.onclick = lockGrid;
   renderColorMap();
   renderCellInfo();
 }
@@ -577,10 +599,9 @@ function resetImage() {
   state.imgScale = scale;
   state.imgOffX = (cw - state.image.width * scale) / 2;
   state.imgOffY = (ch - state.image.height * scale) / 2;
+  centerGrid();
   render();
 }
-
-// ===== 渲染 =====
 function render() {
   const cw = canvasWrap.clientWidth;
   const ch = canvasWrap.clientHeight;
@@ -591,12 +612,15 @@ function render() {
   if (!state.image) return;
 
   // 图片
+
+  // 图片
   const iw = state.image.width * state.imgScale;
   const ih = state.image.height * state.imgScale;
   ctx.drawImage(state.image, state.imgOffX, state.imgOffY, iw, ih);
 
-  // 网格仅在对齐模式显示，切分后消失
-  if (!state.locked) drawInfiniteGrid();
+  // 网格显示：加载图片后、锁定前可见
+  const showGrid = state.image && !state.locked;
+  if (showGrid) drawGrid();
 
   // 拼豆模式：图纸变灰，仅选中色号高亮
   if (state.beadingMode && state.cells) {
@@ -640,29 +664,42 @@ function drawActiveCells() {
   }
 }
 
-function drawInfiniteGrid() {
-  const cw = canvasWrap.clientWidth;
-  const ch = canvasWrap.clientHeight;
+function drawGrid() {
   const cs = state.cellSize;
   if (cs < 5) return;
+  const ox = state.gridOffX, oy = state.gridOffY;
+  const gw = state.gridCols * cs;
+  const gh = state.gridRows * cs;
 
-  const modX = ((state.gridOffX % cs) + cs) % cs;
-  const modY = ((state.gridOffY % cs) + cs) % cs;
+  // 空格子棋盘格标记
+  if (state.emptyCells.size > 0) {
+    const n = 4; // n×n 棋盘格
+    for (const key of state.emptyCells) {
+      const [r, c] = key.split(',').map(Number);
+      const x0 = ox + c * cs + 1, y0 = oy + r * cs + 1;
+      const w = cs - 2, h = cs - 2;
+      const bw = w / n, bh = h / n;
+      for (let br = 0; br < n; br++) {
+        for (let bc = 0; bc < n; bc++) {
+          ctx.fillStyle = (br + bc) % 2 === 0 ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.7)';
+          ctx.fillRect(x0 + bc * bw, y0 + br * bh, bw, bh);
+        }
+      }
+    }
+  }
 
   ctx.strokeStyle = 'rgba(233,69,96,0.55)';
   ctx.lineWidth = 1.5;
 
-  for (let x = modX; x < cw; x += cs) {
-    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, ch); ctx.stroke();
+  // 竖线
+  for (let c = 0; c <= state.gridCols; c++) {
+    const x = ox + c * cs;
+    ctx.beginPath(); ctx.moveTo(x, oy); ctx.lineTo(x, oy + gh); ctx.stroke();
   }
-  for (let x = modX - cs; x >= 0; x -= cs) {
-    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, ch); ctx.stroke();
-  }
-  for (let y = modY; y < ch; y += cs) {
-    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(cw, y); ctx.stroke();
-  }
-  for (let y = modY - cs; y >= 0; y -= cs) {
-    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(cw, y); ctx.stroke();
+  // 横线
+  for (let r = 0; r <= state.gridRows; r++) {
+    const y = oy + r * cs;
+    ctx.beginPath(); ctx.moveTo(ox, y); ctx.lineTo(ox + gw, y); ctx.stroke();
   }
 }
 
@@ -713,36 +750,103 @@ function screenToImage(sx, sy) {
   };
 }
 
+function imageToScreen(ix, iy) {
+  return {
+    x: state.imgOffX + ix * state.imgScale,
+    y: state.imgOffY + iy * state.imgScale,
+  };
+}
+
 canvasWrap.addEventListener('mousedown', e => {
   if (!state.image) return;
   state.dragging = true;
   state.hasMoved = false;
   state.dragStartMouse = { x: e.clientX, y: e.clientY };
   state.dragStartImgOff = { x: state.imgOffX, y: state.imgOffY };
-  canvasWrap.style.cursor = 'grabbing';
+  state._markDragging = !state.locked && isMarkEmptyActive();
+  state._editDragging = state.locked && state.editMode && !state.beadingMode;
+  if (state._markDragging || state._editDragging) {
+    state._lastMarkedKey = null;
+    canvasWrap.style.cursor = 'crosshair';
+  } else {
+    canvasWrap.style.cursor = 'grabbing';
+  }
 });
 
 window.addEventListener('mousemove', e => {
   if (!state.dragging) return;
+  if (state._markDragging || state._editDragging) {
+    state.hasMoved = true;
+    const rect = mainCanvas.getBoundingClientRect();
+    if (state._editDragging) {
+      // 编辑模式滑选：将拖过的格子分配给当前编辑色号
+      const imgPos = screenToImage(e.clientX - rect.left, e.clientY - rect.top);
+      const ecell = findCellAtImage(imgPos.x, imgPos.y);
+      if (ecell) {
+        const key = `${ecell.row},${ecell.col}`;
+        if (key !== state._lastMarkedKey) {
+          state._lastMarkedKey = key;
+          if (ecell.code !== state.editingCode) {
+            if (ecell.code && state.colorMap && state.colorMap.has(ecell.code)) {
+              removeCellFromCode(ecell, ecell.code);
+            }
+            ecell.code = state.editingCode;
+            let entry = state.colorMap.get(state.editingCode);
+            if (!entry) { entry = { code: state.editingCode, rgb: ecell.rgb, cells: [] }; state.colorMap.set(state.editingCode, entry); }
+            entry.cells.push({ row: ecell.row, col: ecell.col });
+            renderColorMap();
+            render();
+          }
+        }
+      }
+    } else {
+      const cell = gridCellAtScreen(e.clientX - rect.left, e.clientY - rect.top);
+      if (cell) {
+        const key = `${cell.row},${cell.col}`;
+        if (key !== state._lastMarkedKey) {
+          state._lastMarkedKey = key;
+          if (e.ctrlKey) {
+            if (!state.emptyCells.has(key)) {
+              state.emptyCells.add(key);
+              render();
+            }
+          } else {
+            toggleEmptyCell(cell.row, cell.col);
+            render();
+          }
+        }
+      }
+    }
+    return;
+  }
   state.hasMoved = true;
   state.imgOffX = state.dragStartImgOff.x + (e.clientX - state.dragStartMouse.x);
   state.imgOffY = state.dragStartImgOff.y + (e.clientY - state.dragStartMouse.y);
-
   render();
 });
 
 window.addEventListener('mouseup', e => {
   if (!state.dragging) return;
+  const wasSpecialDrag = state._markDragging || state._editDragging;
   state.dragging = false;
+  state._markDragging = false;
+  state._editDragging = false;
   canvasWrap.style.cursor = '';
-  if (!state.hasMoved && state.locked && !state.beadingMode) {
-    const rect = mainCanvas.getBoundingClientRect();
-    const imgPos = screenToImage(e.clientX - rect.left, e.clientY - rect.top);
-    if (state.editMode) {
-      handleEditClick(imgPos.x, imgPos.y);
-    } else {
-      handleCellClick(imgPos.x, imgPos.y);
-    }
+  if (wasSpecialDrag && state.hasMoved) return;
+  if (state.hasMoved) return;
+  const rect = mainCanvas.getBoundingClientRect();
+  const sx = e.clientX - rect.left;
+  const sy = e.clientY - rect.top;
+  if (!state.locked && isMarkEmptyActive()) {
+    toggleEmptyAtScreen(sx, sy);
+    return;
+  }
+  if (state.beadingMode) return;
+  const imgPos = screenToImage(sx, sy);
+  if (state.editMode) {
+    handleEditClick(imgPos.x, imgPos.y);
+  } else {
+    handleCellClick(imgPos.x, imgPos.y);
   }
 });
 
@@ -793,6 +897,9 @@ canvasWrap.addEventListener('touchstart', e => {
   state.hasMoved = false;
   state.dragStartMouse = { x: e.touches[0].clientX, y: e.touches[0].clientY };
   state.dragStartImgOff = { x: state.imgOffX, y: state.imgOffY };
+  state._markDragging = !state.locked && isMarkEmptyActive();
+  state._editDragging = state.locked && state.editMode && !state.beadingMode;
+  state._lastMarkedKey = null;
 }, { passive: false });
 
 canvasWrap.addEventListener('touchmove', e => {
@@ -806,31 +913,71 @@ canvasWrap.addEventListener('touchmove', e => {
     state.imgScale = newScale;
     state.imgOffX = state.pinchMidScr.x - state.pinchMidImg.x * newScale;
     state.imgOffY = state.pinchMidScr.y - state.pinchMidImg.y * newScale;
-  
     render();
     return;
   }
   if (state.dragging && e.touches.length === 1) {
     e.preventDefault();
-    state.hasMoved = true;
-    state.imgOffX = state.dragStartImgOff.x + (e.touches[0].clientX - state.dragStartMouse.x);
-    state.imgOffY = state.dragStartImgOff.y + (e.touches[0].clientY - state.dragStartMouse.y);
-  
-    render();
+    if (state._markDragging || state._editDragging) {
+      state.hasMoved = true;
+      const rect = mainCanvas.getBoundingClientRect();
+      if (state._editDragging) {
+        const imgPos = screenToImage(e.touches[0].clientX - rect.left, e.touches[0].clientY - rect.top);
+        const ecell = findCellAtImage(imgPos.x, imgPos.y);
+        if (ecell) {
+          const key = `${ecell.row},${ecell.col}`;
+          if (key !== state._lastMarkedKey) {
+            state._lastMarkedKey = key;
+            if (ecell.code !== state.editingCode) {
+              if (ecell.code && state.colorMap && state.colorMap.has(ecell.code)) {
+                removeCellFromCode(ecell, ecell.code);
+              }
+              ecell.code = state.editingCode;
+              let entry = state.colorMap.get(state.editingCode);
+              if (!entry) { entry = { code: state.editingCode, rgb: ecell.rgb, cells: [] }; state.colorMap.set(state.editingCode, entry); }
+              entry.cells.push({ row: ecell.row, col: ecell.col });
+              renderColorMap();
+              render();
+            }
+          }
+        }
+      } else {
+        const cell = gridCellAtScreen(e.touches[0].clientX - rect.left, e.touches[0].clientY - rect.top);
+        if (cell) {
+          const key = `${cell.row},${cell.col}`;
+          if (key !== state._lastMarkedKey) {
+            state._lastMarkedKey = key;
+            toggleEmptyCell(cell.row, cell.col);
+            render();
+          }
+        }
+      }
+    } else {
+      state.hasMoved = true;
+      state.imgOffX = state.dragStartImgOff.x + (e.touches[0].clientX - state.dragStartMouse.x);
+      state.imgOffY = state.dragStartImgOff.y + (e.touches[0].clientY - state.dragStartMouse.y);
+      render();
+    }
   }
 }, { passive: false });
 
 canvasWrap.addEventListener('touchend', e => {
   if (e.touches.length === 0) {
-    if (state.dragging && !state.hasMoved && state.locked && !state.beadingMode) {
+    state._markDragging = false;
+    state._editDragging = false;
+    if (state.dragging && !state.hasMoved) {
       const rect = mainCanvas.getBoundingClientRect();
       const tx = state.dragStartMouse.x - rect.left;
       const ty = state.dragStartMouse.y - rect.top;
-      const imgPos = screenToImage(tx, ty);
-      if (state.editMode) {
-        handleEditClick(imgPos.x, imgPos.y);
-      } else {
-        handleCellClick(imgPos.x, imgPos.y);
+      if (!state.locked && isMarkEmptyActive()) {
+        toggleEmptyAtScreen(tx, ty);
+      } else if (!state.beadingMode) {
+        const imgPos = screenToImage(tx, ty);
+        if (state.editMode) {
+          handleEditClick(imgPos.x, imgPos.y);
+        } else {
+          handleCellClick(imgPos.x, imgPos.y);
+        }
       }
     }
     state.dragging = false;
@@ -884,10 +1031,93 @@ function nudgeScale(delta) {
   render();
 }
 
-function nudgeGrid(dx, dy) {
-  state.gridOffX += dx;
-  state.gridOffY += dy;
+function onGridColsChange() {
+  state.gridCols = Math.max(1, parseInt(document.getElementById('gridCols').value) || 30);
+  document.getElementById('gridCols').value = state.gridCols;
+  centerGrid();
   render();
+}
+
+function onGridRowsChange() {
+  state.gridRows = Math.max(1, parseInt(document.getElementById('gridRows').value) || 30);
+  document.getElementById('gridRows').value = state.gridRows;
+  centerGrid();
+  render();
+}
+
+// 屏幕坐标 → 网格行列
+function gridCellAtScreen(sx, sy) {
+  const col = Math.floor((sx - state.gridOffX) / state.cellSize);
+  const row = Math.floor((sy - state.gridOffY) / state.cellSize);
+  if (col < 0 || col >= state.gridCols || row < 0 || row >= state.gridRows) return null;
+  return { row, col };
+}
+
+function toggleEmptyAtScreen(sx, sy) {
+  if (!state.image || state.locked) return;
+  const cell = gridCellAtScreen(sx, sy);
+  if (!cell) return;
+  toggleEmptyCell(cell.row, cell.col);
+  render();
+}
+
+function toggleEmptyCell(row, col) {
+  const key = `${row},${col}`;
+  if (state.emptyCells.has(key)) {
+    state.emptyCells.delete(key);
+  } else {
+    state.emptyCells.add(key);
+  }
+}
+
+function toggleMarkEmptyMode() {
+  state.markEmptyMode = !state.markEmptyMode;
+  const btn = document.getElementById('btnMarkEmpty');
+  if (state.markEmptyMode) {
+    btn.classList.add('active');
+    btn.textContent = '标空中';
+  } else {
+    btn.classList.remove('active');
+    btn.textContent = '标空';
+  }
+}
+
+// Ctrl 键临时切换标空模式
+document.addEventListener('keydown', e => {
+  if (e.key === 'Control' && !state.locked && state.image) {
+    if (!state._ctrlMarkEmpty) {
+      state._ctrlMarkEmpty = true;
+      if (!state.markEmptyMode) {
+        document.getElementById('btnMarkEmpty').classList.add('active');
+        document.getElementById('btnMarkEmpty').textContent = '标空中';
+      }
+    }
+  }
+});
+document.addEventListener('keyup', e => {
+  if (e.key === 'Control' && state._ctrlMarkEmpty) {
+    state._ctrlMarkEmpty = false;
+    if (!state.markEmptyMode) {
+      document.getElementById('btnMarkEmpty').classList.remove('active');
+      document.getElementById('btnMarkEmpty').textContent = '标空';
+    }
+  }
+});
+
+function isMarkEmptyActive() {
+  return state.markEmptyMode || state._ctrlMarkEmpty;
+}
+
+function centerGrid() {
+  const cw = canvasWrap.clientWidth;
+  const ch = canvasWrap.clientHeight;
+  state.gridOffX = Math.round((cw - state.gridCols * state.cellSize) / 2);
+  state.gridOffY = Math.round((ch - state.gridRows * state.cellSize) / 2);
+}
+
+function syncGridUI() {
+  document.getElementById('gridCols').value = state.gridCols;
+  document.getElementById('gridRows').value = state.gridRows;
 }
 
 // ===== 切分 =====
@@ -914,6 +1144,7 @@ function calibrateCode(rawCode) {
   return COLOR_LIB[code] ? code : '?';
 }
 
+// ===== 识别（检测格子 + OCR + COLOR_LIB 匹配） =====
 async function lockGrid() {
   if (!state.image) return;
 
@@ -924,159 +1155,133 @@ async function lockGrid() {
   const imgW = state.image.width;
   const imgH = state.image.height;
 
-  // 图片在屏幕上的范围
-  const imgScrL = ox;
-  const imgScrT = oy;
-  const imgScrR = ox + imgW * s;
-  const imgScrB = oy + imgH * s;
-
-  // 覆盖图片的网格范围
-  const modX = ((state.gridOffX % cs) + cs) % cs;
-  const modY = ((state.gridOffY % cs) + cs) % cs;
-  const firstCol = Math.floor((imgScrL - modX) / cs);
-  const firstRow = Math.floor((imgScrT - modY) / cs);
-  const lastCol = Math.ceil((imgScrR - modX) / cs);
-  const lastRow = Math.ceil((imgScrB - modY) / cs);
-  const totalCols = lastCol - firstCol;
-  const totalRows = lastRow - firstRow;
+  const totalCols = state.gridCols;
+  const totalRows = state.gridRows;
   const total = totalRows * totalCols;
 
   if (total === 0 || total > 100000) {
-    toast(`格子数 ${total} 异常，请调整格子大小`);
+    toast(`格子数 ${total} 异常，请调整列/行数`);
     return;
   }
 
-  // 立即锁定图片
-  state.locked = true;
-  document.getElementById('btnLock').textContent = '处理中...';
-  document.getElementById('btnLock').disabled = true;
-  showLoading('采样颜色...');
+  showLoading('检测格子...');
   render();
 
   try {
+    const imgCellSize = cs / s;
 
-  // 每个格子在图像上的大小
-  const imgCellSize = cs / s;
+    // 1) 投影法检测格子，采样 RGB
+    const offCanvas2 = document.createElement('canvas');
+    offCanvas2.width = imgW;
+    offCanvas2.height = imgH;
+    const offCtx2 = offCanvas2.getContext('2d');
+    offCtx2.drawImage(state.image, 0, 0);
+    const fullImgData = offCtx2.getImageData(0, 0, imgW, imgH);
+    const fullPixels = fullImgData.data;
 
-  // 一次性获取整个图片的像素数据
-  offCanvas.width = imgW;
-  offCanvas.height = imgH;
-  offCtx.drawImage(state.image, 0, 0);
-  const fullImgData = offCtx.getImageData(0, 0, imgW, imgH);
-  const fullPixels = fullImgData.data;
+    state.cells = new Map();
+    const emptySet = state.emptyCells;
+    const gx = state.gridOffX, gy = state.gridOffY;
+    for (let r = 0; r < totalRows; r++) {
+      for (let c = 0; c < totalCols; c++) {
+        // 跳过用户标空的格子
+        if (emptySet.has(`${r},${c}`)) continue;
+        const scrX = gx + c * cs;
+        const scrY = gy + r * cs;
+        const imgX = Math.round((scrX - ox) / s);
+        const imgY = Math.round((scrY - oy) / s);
+        const size = Math.round(imgCellSize);
 
-  state.cells = new Map();
-  const colorClusters = [];
+        if (imgX + size <= 0 || imgY + size <= 0 || imgX >= imgW || imgY >= imgH) continue;
+        const cx = Math.max(0, imgX);
+        const cy = Math.max(0, imgY);
+        const csz = Math.min(size, imgW - cx, imgH - cy);
+        if (csz < 2) continue;
 
-  // 从全图数据中采样每个格子
-  for (let r = 0; r < totalRows; r++) {
-    for (let c = 0; c < totalCols; c++) {
-      const scrX = modX + (firstCol + c) * cs;
-      const scrY = modY + (firstRow + r) * cs;
-      const imgX = Math.round((scrX - ox) / s);
-      const imgY = Math.round((scrY - oy) / s);
-      const size = Math.round(imgCellSize);
+        const rgb = sampleFromData(fullPixels, imgW, imgH, cx, cy, csz);
+        const key = `${r},${c}`;
+        state.cells.set(key, { row: r, col: c, imgX: cx, imgY: cy, size: csz, rgb, code: '?' });
+      }
+      if (r % 10 === 0) {
+        showLoading(`采样 ${r + 1}/${totalRows} 行`);
+        await sleep(0);
+      }
+    }
 
-      if (imgX + size <= 0 || imgY + size <= 0 || imgX >= imgW || imgY >= imgH) continue;
-      const cx = Math.max(0, imgX);
-      const cy = Math.max(0, imgY);
-      const csz = Math.min(size, imgW - cx, imgH - cy);
-      if (csz < 2) continue;
+    // 2) OCR 每个格子 + COLOR_LIB fallback
+    state.colorMap = new Map();
+    const allCells = [...state.cells.values()];
 
-      const rgb = sampleFromData(fullPixels, imgW, imgH, cx, cy, csz);
-      const key = `${r},${c}`;
-      state.cells.set(key, { row: r, col: c, imgX: cx, imgY: cy, size: csz, rgb, code: null });
+    if (allCells.length > 0) {
+      showLoading('加载OCR引擎...');
+      const worker = await Tesseract.createWorker('eng', 1, {
+        logger: m => {
+          if (m.status === 'loading tesseract core')
+            showLoading(`加载OCR核心... ${m.progress ? Math.round(m.progress * 100) + '%' : ''}`);
+        }
+      });
+      await worker.setParameters({
+        tessedit_pageseg_mode: 8,
+        tessedit_char_whitelist: 'ABCDEFGHMPQRTXY0123456789',
+      });
 
-      // 颜色聚类
-      let found = false;
-      for (const cluster of colorClusters) {
-        if (rgbDistance(rgb, cluster.rgb) < 25) {
-          cluster.cellKeys.push(key);
-          found = true;
-          break;
+      let ocrHits = 0, ocrMiss = 0;
+
+      for (let i = 0; i < allCells.length; i++) {
+        const cell = allCells[i];
+
+        // 纯 OCR，无 RGB fallback
+        let code = '?';
+        try {
+          const raw = (await ocrCell(offCanvas2, cell.imgX, cell.imgY, cell.size, worker)) || '';
+          const ocrCode = calibrateCode(raw);
+          if (ocrCode !== '?') { code = ocrCode; ocrHits++; }
+          else { ocrMiss++; }
+        } catch (e) { ocrMiss++; }
+
+        cell.code = code;
+        let entry = state.colorMap.get(code);
+        if (!entry) { entry = { code, rgb: [...cell.rgb], cells: [] }; state.colorMap.set(code, entry); }
+        entry.cells.push({ row: cell.row, col: cell.col });
+
+        if (i % 10 === 0 || i === allCells.length - 1) {
+          showLoading(`OCR ${i + 1}/${allCells.length} 格 (${ocrHits}次)`);
+          await sleep(0);
         }
       }
-      if (!found) {
-        colorClusters.push({ rgb, cellKeys: [key] });
+      await worker.terminate();
+
+      // 更新 colorMap 各色号 RGB 为该色号所有格子的实际平均色
+      for (const [code, entry] of state.colorMap) {
+        if (entry.cells.length > 0) {
+          let rs = 0, gs = 0, bs = 0;
+          for (const { row, col } of entry.cells) {
+            const cell = state.cells.get(`${row},${col}`);
+            if (cell) { rs += cell.rgb[0]; gs += cell.rgb[1]; bs += cell.rgb[2]; }
+          }
+          entry.rgb = [Math.round(rs / entry.cells.length), Math.round(gs / entry.cells.length), Math.round(bs / entry.cells.length)];
+        }
       }
+
+      const colsWithCells = [...state.colorMap.values()].filter(e => e.cells.length > 0).length;
+      const unmatched = allCells.filter(c => c.code === '?').length;
+      toast(`识别完成: ${ocrHits}格 ${ocrMiss}未识 | ${allCells.length}总格 ${colsWithCells}色`);
     }
 
-    if (r % 10 === 0) {
-      showLoading(`采样 ${r + 1}/${totalRows} 行`);
-      await sleep(0);
-    }
-  }
+    state.locked = true;
+    state.selectedCell = null;
+    state.highlightedCode = null;
+    document.getElementById('btnMarkEmpty').disabled = true;
+    document.getElementById('btnBeading').disabled = false;
+    document.getElementById('btnAction').disabled = true;
 
-  const actualTotal = state.cells.size;
-  showLoading(`${actualTotal}格, ${colorClusters.length}色, 加载OCR引擎...`);
-  await sleep(0);
-
-  // 复用单个worker，带进度回调
-  const worker = await Tesseract.createWorker('eng', 1, {
-    logger: m => {
-      if (m.status === 'loading tesseract core') {
-        showLoading(`加载OCR核心... ${m.progress ? Math.round(m.progress * 100) + '%' : ''}`);
-      } else if (m.status === 'initializing tesseract') {
-        showLoading('初始化OCR引擎...');
-      } else if (m.status === 'loading language traineddata') {
-        showLoading(`加载语言包... ${m.progress ? Math.round(m.progress * 100) + '%' : ''}`);
-      }
-    }
-  });
-  await worker.setParameters({
-    tessedit_pageseg_mode: 8,  // single word
-    tessedit_char_whitelist: 'ABCDEFGHMPQRTXY0123456789',
-  });
-  showLoading(`${actualTotal}格, ${colorClusters.length}色, OCR识别中...`);
-
-  let ocrDone = 0;
-  for (const cluster of colorClusters) {
-    const repKey = cluster.cellKeys[0];
-    const repCell = state.cells.get(repKey);
-    const rawCode = await ocrCell(offCanvas, repCell.imgX, repCell.imgY, repCell.size, worker);
-    const finalCode = calibrateCode(rawCode || '?');
-
-    for (const key of cluster.cellKeys) {
-      state.cells.get(key).code = finalCode;
-    }
-
-    ocrDone++;
-    if (ocrDone % 5 === 0 || ocrDone === colorClusters.length) {
-      showLoading(`OCR ${ocrDone}/${colorClusters.length} 色`);
-      await sleep(1);
-    }
-  }
-  await worker.terminate();
-
-  // 建立颜色映射
-  state.colorMap = new Map();
-  for (const [key, cell] of state.cells) {
-    const code = cell.code;
-    let entry = state.colorMap.get(code);
-    if (!entry) { entry = { code, rgb: cell.rgb, cells: [] }; state.colorMap.set(code, entry); }
-    entry.cells.push({ row: cell.row, col: cell.col });
-    // 颜色取平均
-    const n = entry.cells.length;
-    entry.rgb = entry.rgb.map((v, i) => Math.round((v * (n - 1) + cell.rgb[i]) / n));
-  }
-
-  state.selectedCell = null;
-  state.highlightedCode = null;
-  document.getElementById('btnLock').style.display = 'none';
-  document.getElementById('btnBeading').disabled = false;
-    `${actualTotal} 格 ${colorClusters.length} 色 | 点击格子查看详情`;
-
-  hideLoading();
-  renderColorMap();
-  render();
-  toast(`切分完成！${actualTotal}格，${colorClusters.length}种颜色`);
+    hideLoading();
+    renderColorMap();
+    render();
   } catch (err) {
     hideLoading();
     state.locked = false;
-    document.getElementById('btnLock').style.display = '';
-    document.getElementById('btnLock').textContent = '切分';
-    document.getElementById('btnLock').disabled = false;
-    toast(`OCR失败: ${err.message || '未知错误'}`);
+    toast(`识别失败: ${err.message || '未知错误'}`);
   }
 }
 
@@ -1174,16 +1379,19 @@ async function ocrCell(canvas, x, y, size, worker) {
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 // ===== 编辑模式：点击格子切换归属 =====
-function handleEditClick(imgX, imgY) {
-  if (!state.cells) return;
-  let found = null;
-  for (const [key, cell] of state.cells) {
+function findCellAtImage(imgX, imgY) {
+  if (!state.cells) return null;
+  for (const [, cell] of state.cells) {
     if (imgX >= cell.imgX && imgX < cell.imgX + cell.size &&
         imgY >= cell.imgY && imgY < cell.imgY + cell.size) {
-      found = cell;
-      break;
+      return cell;
     }
   }
+  return null;
+}
+
+function handleEditClick(imgX, imgY) {
+  const found = findCellAtImage(imgX, imgY);
   if (!found) return;
 
   const key = `${found.row},${found.col}`;
@@ -1348,7 +1556,7 @@ function enterBeadingMode() {
   state.activeColors = new Set();
   document.getElementById('btnBeading').textContent = '退出拼豆';
   document.getElementById('btnBeading').classList.add('active');
-  document.getElementById('btnLock').disabled = true;
+  document.getElementById('btnAction').disabled = true;
   renderColorMap();
   renderCellInfo();
   render();
@@ -1359,7 +1567,7 @@ function exitBeadingMode() {
   state.activeColors = new Set();
   document.getElementById('btnBeading').textContent = '开始拼豆';
   document.getElementById('btnBeading').classList.remove('active');
-  document.getElementById('btnLock').disabled = false;
+  document.getElementById('btnAction').disabled = false;
   renderColorMap();
   renderCellInfo();
   render();
@@ -1513,10 +1721,10 @@ document.addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT') return;
 
   if (!state.locked) {
-    if (e.key === 'ArrowLeft') { e.preventDefault(); if (e.shiftKey) state.gridOffX -= 1; else state.imgOffX -= 1; }
-    if (e.key === 'ArrowRight') { e.preventDefault(); if (e.shiftKey) state.gridOffX += 1; else state.imgOffX += 1; }
-    if (e.key === 'ArrowUp') { e.preventDefault(); if (e.shiftKey) state.gridOffY -= 1; else state.imgOffY -= 1; }
-    if (e.key === 'ArrowDown') { e.preventDefault(); if (e.shiftKey) state.gridOffY += 1; else state.imgOffY += 1; }
+    if (e.key === 'ArrowLeft') { e.preventDefault(); state.imgOffX -= 1; }
+    if (e.key === 'ArrowRight') { e.preventDefault(); state.imgOffX += 1; }
+    if (e.key === 'ArrowUp') { e.preventDefault(); state.imgOffY -= 1; }
+    if (e.key === 'ArrowDown') { e.preventDefault(); state.imgOffY += 1; }
     if (e.key === '0') { e.preventDefault(); resetImage(); }
   
     render();
@@ -1537,9 +1745,6 @@ document.addEventListener('keydown', e => {
       render();
     }
   }
-
-  // 回车切分
-  if (e.key === 'Enter' && !state.locked) { e.preventDefault(); lockGrid(); }
 });
 
 // ===== 工具 =====
@@ -1549,11 +1754,6 @@ function toast(msg) {
   el.textContent = msg;
   document.body.appendChild(el);
   setTimeout(() => el.remove(), 2500);
-}
-
-function rgbDistance(r1, g1, b1, r2, g2, b2) {
-  const dr = r1 - r2, dg = g1 - g2, db = b1 - b2;
-  return Math.sqrt(2 * dr * dr + 4 * dg * dg + 3 * db * db);
 }
 
 resetImage();
