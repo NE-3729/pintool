@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no,viewport-fit=cover">
 <title>豆好拼</title>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <style>
@@ -27,14 +27,16 @@
 
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 
+html{touch-action:manipulation}
 body{
   font-family:"Courier New",Courier,monospace;
   background:var(--bg);
   color:var(--text);
-  height:100vh;
+  height:100vh;height:100dvh;
   display:flex;flex-direction:column;overflow:hidden;
   image-rendering:crisp-edges;
   -webkit-font-smoothing:none;
+  touch-action:manipulation;
   padding-top:env(safe-area-inset-top);
   padding-bottom:env(safe-area-inset-bottom);
 }
@@ -483,6 +485,11 @@ const mainCanvas = document.getElementById('mainCanvas');
 const ctx = mainCanvas.getContext('2d');
 const offCanvas = document.getElementById('offscreenCanvas');
 const offCtx = offCanvas.getContext('2d');
+
+// ===== 禁止页面缩放（不影响canvas内双指操作） =====
+document.addEventListener('gesturestart', e => { e.preventDefault(); });
+document.addEventListener('gesturechange', e => { e.preventDefault(); });
+document.addEventListener('gestureend', e => { e.preventDefault(); });
 
 // ===== 图片加载 =====
 document.addEventListener('dragover', e => { e.preventDefault(); });
