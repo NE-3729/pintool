@@ -997,7 +997,7 @@ window.addEventListener('resize', () => {
   if (!state.image) return;
   const cur = window.matchMedia('(orientation: portrait)').matches ? 'p' : 'l';
   if (cur !== _lastOrient) { _lastOrient = cur; resetImage(); }
-  else render();
+  else { centerGrid(); render(); }
 });
 
 function toggleDonate() {
@@ -1111,6 +1111,10 @@ function isMarkEmptyActive() {
 function centerGrid() {
   const cw = canvasWrap.clientWidth;
   const ch = canvasWrap.clientHeight;
+  // 格子自适应屏幕宽度，最大45px
+  state.cellSize = Math.round(Math.min(45, cw * 0.85 / state.gridCols));
+  if (state.cellSize < 3) state.cellSize = 3;
+  // 行高也用同样的 cellSize
   state.gridOffX = Math.round((cw - state.gridCols * state.cellSize) / 2);
   state.gridOffY = Math.round((ch - state.gridRows * state.cellSize) / 2);
 }
