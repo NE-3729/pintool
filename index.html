@@ -884,11 +884,34 @@ const COLOR_LIB = {
   M01:[188,198,184], M02:[138,163,134], M03:[105,125,128], M04:[227,210,188], M05:[208,204,170], M06:[176,167,130], M07:[180,164,151], M08:[179,130,129], M09:[165,135,103], M10:[197,178,188], M11:[159,117,148], M12:[100,71,73], M13:[209,144,102], M14:[199,115,98], M15:[117,125,120],
 };
 
-function calibrateCode(rawCode) {
+const AMBIGUOUS_PAIRS = new Map();
+for (const code of Object.keys(COLOR_LIB)) {
+  for (let i = 1; i < code.length; i++) {
+    if (code[i] === '6' || code[i] === '8') {
+      const alt = code[i] === '6' ? '8' : '6';
+      const variant = code.slice(0, i) + alt + code.slice(i + 1);
+      if (COLOR_LIB[variant]) AMBIGUOUS_PAIRS.set(code, variant);
+    }
+  }
+}
+
+function weightedDist(rgb1, rgb2) {
+  const dr = rgb1[0] - rgb2[0], dg = rgb1[1] - rgb2[1], db = rgb1[2] - rgb2[2];
+  return 2 * dr * dr + 4 * dg * dg + 3 * db * db;
+}
+
+function calibrateCode(rawCode, cellRgb) {
   const cleaned = rawCode.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
   const m = cleaned.match(/^([A-Z])(\d)$/);
   const code = m ? m[1] + '0' + m[2] : cleaned;
-  return COLOR_LIB[code] ? code : '?';
+  if (!COLOR_LIB[code]) return '?';
+  if (!cellRgb) return code;
+  // 6/8 混淆纠偏：用格子实际 RGB 跟 COLOR_LIB 两个候选色算距离
+  const variant = AMBIGUOUS_PAIRS.get(code);
+  if (!variant) return code;
+  const d1 = weightedDist(cellRgb, COLOR_LIB[code]);
+  const d2 = weightedDist(cellRgb, COLOR_LIB[variant]);
+  return d2 < d1 ? variant : code;
 }
 
 async function lockGrid() {
@@ -992,7 +1015,7 @@ async function lockGrid() {
   const validCount = { yes: 0, no: 0 };
   for (const [key, cell] of state.cells) {
     const raw = (await ocrCell(offCanvas, cell.imgX, cell.imgY, cell.size, worker)) || '';
-    cell.code = calibrateCode(raw);
+    cell.code = calibrateCode(raw, cell.rgb);
     if (cell.code === '?') validCount.no++;
     else validCount.yes++;
 
@@ -1084,13 +1107,16 @@ function sampleCellColor(ctx, x, y, size) {
 
 async function ocrCell(canvas, x, y, size, worker) {
   try {
-    const sc = 4;
+    const sc = 8;
+    const pad = 4 * sc;
     const cellCanvas = document.createElement('canvas');
-    cellCanvas.width = size * sc;
-    cellCanvas.height = size * sc;
+    cellCanvas.width = size * sc + pad * 2;
+    cellCanvas.height = size * sc + pad * 2;
     const cctx = cellCanvas.getContext('2d');
     cctx.imageSmoothingEnabled = false;
-    cctx.drawImage(canvas, x, y, size, size, 0, 0, cellCanvas.width, cellCanvas.height);
+    cctx.fillStyle = '#fff';
+    cctx.fillRect(0, 0, cellCanvas.width, cellCanvas.height);
+    cctx.drawImage(canvas, x, y, size, size, pad, pad, size * sc, size * sc);
 
     // 增强对比度
     const imgData = cctx.getImageData(0, 0, cellCanvas.width, cellCanvas.height);
